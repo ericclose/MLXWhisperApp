@@ -677,6 +677,21 @@ struct SettingsView: View {
                     }
                 }
                 
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Hugging Face Mirror (Optional)")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    TextField("https://hf-mirror.com", text: $modelManager.hfMirror)
+                        .textFieldStyle(.roundedBorder)
+                        .onSubmit {
+                            modelManager.fetchCollection()
+                        }
+                    Text("Set this if you have trouble downloading models.")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.top, 4)
+                
                 Button(action: { modelManager.openModelsFolder() }) {
                     Label("Show Models in Finder", systemImage: "folder")
                 }

@@ -85,6 +85,14 @@ class Transcriber: ObservableObject {
         var env = ProcessInfo.processInfo.environment
         env["HF_HOME"] = modelDir.path
         
+        // Enable download acceleration and mirrors
+        env["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
+        if let mirror = UserDefaults.standard.string(forKey: "hfMirror"), !mirror.isEmpty {
+            env["HF_ENDPOINT"] = mirror
+        } else if let sysMirror = ProcessInfo.processInfo.environment["HF_ENDPOINT"] {
+            env["HF_ENDPOINT"] = sysMirror
+        }
+        
         // Add bundled FFmpeg to PATH so mlx-whisper can find it
         if let resourcePath = Bundle.main.resourcePath {
             let currentPath = env["PATH"] ?? "/usr/bin:/bin:/usr/sbin:/sbin"
@@ -161,37 +169,55 @@ class Transcriber: ObservableObject {
                     self.downloadSpeed = ""
                 }
                 self.state = .transcribing(msg)
-            } else if type == "download_progress", let msg = dict["data"] as? String {
+            } else if type == "download_progress" {
                 self.state = .transcribing("Downloading Model...")
                 
-                let isOverall = msg.contains("Fetching")
-                
-                if let range = msg.range(of: "(\\d+)%", options: .regularExpression) {
-                    let percentStr = msg[range].dropLast()
-                    if let p = Double(percentStr) {
-                        if isOverall {
-                            // Overall progress is always prioritized
-                            self.downloadPercent = p
-                        } else if self.downloadPercent == nil || p > (self.downloadPercent ?? 0) {
-                            // Individual file progress only if it's moving forward
-                            self.downloadPercent = p
+                if let progressData = dict["data"] as? [String: Any] {
+                    // Try structured data first
+                    if let p = progressData["percent"] as? Double {
+                        self.downloadPercent = p
+                    } else if let p = progressData["percent"] as? Int {
+                        self.downloadPercent = Double(p)
+                    }
+                    
+                    if let s = progressData["speed"] as? String {
+                        self.downloadSpeed = s
+                    }
+                    
+                    // Fallback for raw string if structured parsing failed in Python
+                    if let msg = progressData["raw"] as? String {
+                        let isOverall = msg.contains("Fetching")
+                        if self.downloadPercent == nil {
+                            if let range = msg.range(of: "(\\d+)%", options: .regularExpression) {
+                                let percentStr = msg[range].dropLast()
+                                if let p = Double(percentStr) {
+                                    self.downloadPercent = p
+                                }
+                            }
+                        }
+                        if self.downloadSpeed.isEmpty {
+                            if let speedRange = msg.range(of: "(\\d+(?:\\.\\d+)?[a-zA-Z]+/s)", options: .regularExpression) {
+                                self.downloadSpeed = String(msg[speedRange])
+                            }
                         }
                     }
                 }
-                
-                if let speedRange = msg.range(of: "(\\d+(?:\\.\\d+)?[a-zA-Z]+/s)", options: .regularExpression) {
-                    self.downloadSpeed = String(msg[speedRange])
-                }
-                
-            } else if type == "transcription_progress", let msg = dict["data"] as? String {
+            } else if type == "transcription_progress" {
                 self.downloadPercent = nil
                 self.downloadSpeed = ""
                 self.state = .transcribing("Transcribing Audio...")
                 
-                if let range = msg.range(of: "(\\d+)%", options: .regularExpression) {
-                    let percentStr = msg[range].dropLast()
-                    if let p = Double(percentStr) {
+                if let progressData = dict["data"] as? [String: Any] {
+                    if let p = progressData["percent"] as? Double {
                         self.transcriptionPercent = p
+                    } else if let p = progressData["percent"] as? Int {
+                        self.transcriptionPercent = Double(p)
+                    } else if let msg = progressData["raw"] as? String {
+                        if let range = msg.range(of: "(\\d+)%", options: .regularExpression) {
+                            let percentStr = msg[range].dropLast()
+                            if let p = Double(percentStr) {
+                                self.transcriptionPercent = p
+                            }
                     }
                 }
             } else if type == "error", let msg = dict["data"] as? String {

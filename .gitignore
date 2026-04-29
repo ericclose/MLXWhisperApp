@@ -54,3 +54,6 @@ DerivedData/
 *.xcodeproj
 *.xcworkspace
 xcuserdata/
+
+# Analysis artifacts
+scratch/

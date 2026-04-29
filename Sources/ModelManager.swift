@@ -21,9 +21,15 @@ class ModelManager: ObservableObject {
         }
     }
     @Published var customModelInput: String = ""
+    @Published var hfMirror: String {
+        didSet {
+            UserDefaults.standard.set(hfMirror, forKey: "hfMirror")
+        }
+    }
     
     init() {
         self.selectedModel = UserDefaults.standard.string(forKey: "selectedModel") ?? "mlx-community/whisper-large-v3-mlx"
+        self.hfMirror = UserDefaults.standard.string(forKey: "hfMirror") ?? ""
         fetchCollection()
         checkDownloadedModels()
     }
@@ -68,9 +74,14 @@ class ModelManager: ObservableObject {
         self.downloadedModels = downloaded
     }
     
+    private func getHFURL(path: String) -> URL? {
+        let base = hfMirror.isEmpty ? "https://huggingface.co" : hfMirror
+        return URL(string: "\(base)\(path)")
+    }
+    
     func fetchCollection() {
         Task {
-            guard let url = URL(string: "https://huggingface.co/api/collections/mlx-community/whisper") else { return }
+            guard let url = getHFURL(path: "/api/collections/mlx-community/whisper") else { return }
             
             do {
                 let (data, _) = try await URLSession.shared.data(from: url)
@@ -101,7 +112,7 @@ class ModelManager: ObservableObject {
             await withTaskGroup(of: (String, Double?).self) { group in
                 for model in models {
                     group.addTask {
-                        return (model, await ModelManager.fetchSingleModelSize(modelID: model))
+                        return (model, await self.fetchSingleModelSize(modelID: model))
                     }
                 }
                 
@@ -112,8 +123,8 @@ class ModelManager: ObservableObject {
         }
     }
     
-    nonisolated private static func fetchSingleModelSize(modelID: String) async -> Double? {
-        guard let url = URL(string: "https://huggingface.co/api/models/\(modelID)") else { return nil }
+    private func fetchSingleModelSize(modelID: String) async -> Double? {
+        guard let url = getHFURL(path: "/api/models/\(modelID)") else { return nil }
         var request = URLRequest(url: url)
         request.timeoutInterval = 15
         
