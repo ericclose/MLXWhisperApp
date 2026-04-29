@@ -4,10 +4,10 @@ import json
 import os
 import re
 
-# Enable hf_transfer for faster downloads if available
+# Enable hf-xet for faster downloads if available
 try:
-    import hf_transfer
-    os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
+    import hf_xet
+    os.environ["HF_XET_HIGH_PERFORMANCE"] = "1"
 except ImportError:
     pass
 
@@ -104,12 +104,12 @@ class SubprocessReporter:
                 self.emit("download_progress", {"percent": percent, "raw": line})
             return
 
-        # 2. Look for standard tqdm file progress or hf_transfer progress
+        # 2. Look for standard tqdm file progress or hf-xet progress
         # Example: 45%|████▍     | 1.25GB/2.87GB [00:15<00:18, 85.2MB/s]
         # Or: downloading model.safetensors:  10%
         match = self.tqdm_re.search(line)
         if not match:
-            # Fallback regex for simpler percentage lines often seen in hf_transfer or simplified logs
+            # Fallback regex for simpler percentage lines often seen in hf-xet or simplified logs
             match = re.search(r"(\d+)%", line)
             
         if match:

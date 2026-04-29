@@ -86,7 +86,7 @@ class Transcriber: ObservableObject {
         env["HF_HOME"] = modelDir.path
         
         // Enable download acceleration and mirrors
-        env["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
+        env["HF_XET_HIGH_PERFORMANCE"] = "1"
         if let mirror = UserDefaults.standard.string(forKey: "hfMirror"), !mirror.isEmpty {
             env["HF_ENDPOINT"] = mirror
         } else if let sysMirror = ProcessInfo.processInfo.environment["HF_ENDPOINT"] {
