@@ -12,7 +12,55 @@ except ImportError:
     pass
 
 import mlx_whisper
+import mlx.core as mx
 from huggingface_hub import snapshot_download
+
+def get_model_dtype(model_path):
+    """
+    Automatically detect the model's preferred precision from config.json.
+    Defaults to float16 for MLX models if not specified.
+    """
+    try:
+        config_path = os.path.join(model_path, "config.json")
+        if os.path.exists(config_path):
+            with open(config_path, "r") as f:
+                config = json.load(f)
+                # Check torch_dtype or any MLX specific dtype fields
+                dtype_str = config.get("torch_dtype", "float16")
+                if "float32" in dtype_str:
+                    return mx.float32
+        return mx.float16
+    except:
+        return mx.float16
+
+# --- MONKEY PATCH TO FIX MLX-WHISPER DTYPE BUG ---
+import mlx_whisper.decoding as decoding
+
+def _patched_get_audio_features(self, mel):
+    """
+    A robust replacement for mlx_whisper.decoding.DecodingTask._get_audio_features.
+    It performs the encoder forward pass and automatically ensures the output 
+    dtype matches the model's expected dtype, bypassing the buggy internal check.
+    """
+    # 1. Ensure input mel matches requested precision
+    if self.options.fp16:
+        mel = mel.astype(mx.float16)
+    
+    # 2. Perform encoder forward pass
+    audio_features = self.model.encoder(mel)
+    
+    # 3. FIX: Determine target dtype based on options (same logic as mlx_whisper uses)
+    # This bypasses the crash while maintaining the intended precision
+    target_dtype = mx.float16 if self.options.fp16 else mx.float32
+    
+    if audio_features.dtype != target_dtype:
+        audio_features = audio_features.astype(target_dtype)
+        
+    return audio_features
+
+# Inject the robust patch
+decoding.DecodingTask._get_audio_features = _patched_get_audio_features
+# ------------------------------------------------
 
 class SubprocessReporter:
     def __init__(self):
@@ -133,6 +181,10 @@ def main():
         # snapshot_download will use the redirected stderr, which our reporter will parse
         model_path = snapshot_download(repo_id=args.model)
         
+        # Automatically determine if we should use fp16 based on model config
+        model_dtype = get_model_dtype(model_path)
+        use_fp16 = (model_dtype == mx.float16)
+        
         reporter.last_percent = 0
         reporter.emit("status", "Transcribing...")
         result = mlx_whisper.transcribe(
@@ -141,7 +193,8 @@ def main():
             temperature=args.temperature,
             logprob_threshold=args.logprob_threshold,
             compression_ratio_threshold=args.compression_ratio_threshold,
-            verbose=False
+            verbose=False,
+            fp16=use_fp16
         )
 
         reporter.emit("success", result)
