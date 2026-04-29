@@ -39,7 +39,7 @@ jobs:
         id: create_release
         uses: softprops/action-gh-release@v3
         with:
-          files: MLXWhisperApp.dmg
+          files: "*.dmg"
           tag_name: ${{ github.ref_name }} # Use the actual tag name (e.g. v1.0.0)
           name: Release ${{ github.ref_name }}
           draft: false

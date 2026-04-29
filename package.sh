@@ -3,8 +3,18 @@ set -e
 
 APP_NAME="MLXWhisperApp"
 BUILD_DIR="build"
-DMG_NAME="${APP_NAME}.dmg"
 STAGING_DIR="dmg_staging"
+
+# Extract version from Info.plist
+VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" Info.plist)
+
+# Detect architecture
+ARCH=$(uname -m)
+if [ "$ARCH" == "x86_64" ]; then
+    ARCH="x64"
+fi
+
+DMG_NAME="${APP_NAME}.${ARCH}.${VERSION}.dmg"
 
 # Check if build exists
 if [ ! -d "${BUILD_DIR}/${APP_NAME}.app" ]; then
