@@ -1,0 +1,56 @@
+# --- macOS ---
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+
+# --- Build Artifacts ---
+build/
+dmg_staging/
+*.dmg
+
+# --- Python & Environment ---
+embedded_python/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+ENV/
+.python-version
+pip-log.txt
+pip-delete-this-directory.txt
+
+# --- Binary Dependencies ---
+ffmpeg
+
+# --- Model & Data ---
+# Whisper models downloaded at runtime
+models/
+*.npz
+*.safetensors
+
+# App Support Local Data (if any)
+history.json
+
+# --- Transcription Outputs ---
+*.srt
+*.vtt
+*.txt
+!requirements.txt
+!README.md
+
+# --- IDEs ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- Xcode (Just in case) ---
+DerivedData/
+*.xcodeproj
+*.xcworkspace
+xcuserdata/

@@ -1,0 +1,49 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*' # Trigger on any version tag
+  workflow_dispatch: # Allow manual trigger
+
+jobs:
+  build:
+    name: Build DMG
+    runs-on: macos-14
+    permissions:
+      contents: write
+    # Optional: If you want to trigger on commit message instead of tag, 
+    # you could use: if: startsWith(github.event.head_commit.message, 'v')
+    
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Swift
+        uses: swift-actions/setup-swift@v2.4.0
+        with:
+          swift-version: "5.10"
+
+      - name: Build Application
+        run: |
+          chmod +x build.sh
+          ./build.sh
+
+      - name: Package DMG
+        run: |
+          chmod +x package.sh
+          ./package.sh
+
+      - name: Create Release
+        id: create_release
+        uses: softprops/action-gh-release@v3
+        with:
+          files: MLXWhisperApp.dmg
+          tag_name: ${{ github.ref_name }} # Use the actual tag name (e.g. v1.0.0)
+          name: Release ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

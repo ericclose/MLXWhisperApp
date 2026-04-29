@@ -1,0 +1,4 @@
+mlx
+mlx-whisper
+huggingface_hub
+imageio-ffmpeg
