@@ -8,10 +8,11 @@ on:
 
 jobs:
   build:
-    name: Build DMG
     runs-on: macos-14
     permissions:
       contents: write
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     # Optional: If you want to trigger on commit message instead of tag, 
     # you could use: if: startsWith(github.event.head_commit.message, 'v')
     
