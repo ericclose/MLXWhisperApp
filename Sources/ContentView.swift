@@ -373,36 +373,15 @@ struct MainView: View {
                     Text(msg).padding(.top)
                     
                     if let percent = transcriber.downloadPercent {
-                        VStack(alignment: .leading, spacing: 4) {
-                            ProgressView(value: percent, total: 100.0)
-                                .progressViewStyle(LinearProgressViewStyle())
-                            
-                            HStack {
-                                Text("\(Int(percent))%")
-                                Spacer()
-                                Text(transcriber.downloadSpeed)
-                            }
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundColor(.secondary)
-                        }
-                        .padding(.top, 4)
-                        .padding(.horizontal)
+                        StatsProgressBar(value: percent, speed: transcriber.downloadSpeed, label: "Downloading Model", color: .blue)
+                            .padding(.top, 8)
+                            .padding(.horizontal)
                     }
                     
                     if let transPercent = transcriber.transcriptionPercent {
-                        VStack(alignment: .leading, spacing: 4) {
-                            ProgressView(value: transPercent, total: 100.0)
-                                .progressViewStyle(LinearProgressViewStyle())
-                            
-                            HStack {
-                                Text("\(Int(transPercent))%")
-                                Spacer()
-                            }
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundColor(.secondary)
-                        }
-                        .padding(.top, 4)
-                        .padding(.horizontal)
+                        StatsProgressBar(value: transPercent, speed: transcriber.transcriptionSpeed, label: "Transcribing Audio", color: .purple, iconName: "bolt.fill")
+                            .padding(.top, 8)
+                            .padding(.horizontal)
                     }
                 } else if case .extractingAudio = transcriber.state {
                     Text("Extracting Audio...").padding(.top)

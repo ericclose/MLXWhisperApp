@@ -35,6 +35,7 @@ class Transcriber: ObservableObject {
     @Published var downloadPercent: Double? = nil
     @Published var downloadSpeed: String = ""
     @Published var transcriptionPercent: Double? = nil
+    @Published var transcriptionSpeed: String = ""
     private var process: Process?
     
     // Configurable parameters
@@ -167,6 +168,7 @@ class Transcriber: ObservableObject {
                 if msg == "Transcribing..." {
                     self.downloadPercent = nil
                     self.downloadSpeed = ""
+                    self.transcriptionSpeed = ""
                 }
                 self.state = .transcribing(msg)
             } else if type == "download_progress" {
@@ -211,11 +213,24 @@ class Transcriber: ObservableObject {
                         self.transcriptionPercent = p
                     } else if let p = progressData["percent"] as? Int {
                         self.transcriptionPercent = Double(p)
-                    } else if let msg = progressData["raw"] as? String {
-                        if let range = msg.range(of: "(\\d+)%", options: .regularExpression) {
-                            let percentStr = msg[range].dropLast()
-                            if let p = Double(percentStr) {
-                                self.transcriptionPercent = p
+                    }
+                    
+                    if let s = progressData["speed"] as? String {
+                        self.transcriptionSpeed = s
+                    }
+                    
+                    if let msg = progressData["raw"] as? String {
+                        if self.transcriptionPercent == nil {
+                            if let range = msg.range(of: "(\\d+)%", options: .regularExpression) {
+                                let percentStr = msg[range].dropLast()
+                                if let p = Double(percentStr) {
+                                    self.transcriptionPercent = p
+                                }
+                            }
+                        }
+                        if self.transcriptionSpeed.isEmpty {
+                            if let speedRange = msg.range(of: "(\\d+(?:\\.\\d+)?[a-zA-Z]+/s)", options: .regularExpression) {
+                                self.transcriptionSpeed = String(msg[speedRange])
                             }
                         }
                     }

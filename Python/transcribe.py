@@ -14,6 +14,8 @@ except ImportError:
 import mlx_whisper
 from huggingface_hub import snapshot_download
 
+import time
+
 class SubprocessReporter:
     def __init__(self):
         self.stdout_buf = ""
@@ -23,6 +25,9 @@ class SubprocessReporter:
         # Example: 45%|████▍     | 1.25GB/2.87GB [00:15<00:18, 85.2MB/s]
         self.tqdm_re = re.compile(r"(\d+)%\|.*\|?\s*([\d\.]+[kMG]?B)?/?([\d\.]+[kMG]?B)?\s*\[.*,\s*([\d\.]+[kMG]?B/s)\]")
         self.last_percent = -1
+        self.last_time = time.time()
+        self.last_bytes = 0
+        self.speed_history = []
 
     def write_stdout(self, text):
         for char in text:
@@ -46,26 +51,63 @@ class SubprocessReporter:
         if line.startswith("[") and "-->" in line:
             self.emit("segment_text", line)
 
+    def _parse_size(self, size_str):
+        if not size_str: return 0
+        s = size_str.upper().strip()
+        try:
+            # Use 1000-base for consistency with Activity Monitor / Stats
+            if "GB" in s: return float(s.replace("GB", "").strip()) * 1000 * 1000 * 1000
+            if "MB" in s: return float(s.replace("MB", "").strip()) * 1000 * 1000
+            if "KB" in s: return float(s.replace("KB", "").strip()) * 1000
+            if "B" in s: return float(s.replace("B", "").strip())
+        except: pass
+        return 0
+
     def parse_stderr_line(self, line):
         # Try robust parsing first
         match = self.tqdm_re.search(line)
         if match:
             percent = int(match.group(1))
-            speed = match.group(4)
+            raw_speed = match.group(4)
+            current_size_str = match.group(2)
             
+            # Use provided speed but refine it if possible
             # Identify if it's download or transcription based on context
-            # (huggingface_hub usually shows file sizes like GB/MB)
             if "B" in line and ("B/s" in line or "/" in line):
                 msg_type = "download_progress"
+                
+                # Custom speed calculation for better accuracy/smoothing
+                now = time.time()
+                current_bytes = self._parse_size(current_size_str)
+                if current_bytes > 0 and self.last_bytes > 0:
+                    dt = now - self.last_time
+                    if dt > 0.1:
+                        db = current_bytes - self.last_bytes
+                        if db >= 0:
+                            instant_speed = db / dt
+                            self.speed_history.append(instant_speed)
+                            if len(self.speed_history) > 5:
+                                self.speed_history.pop(0)
+                            
+                            avg_speed = sum(self.speed_history) / len(self.speed_history)
+                            if avg_speed > 1000 * 1000:
+                                raw_speed = f"{avg_speed / (1000*1000):.1f} MB/s"
+                            elif avg_speed > 1000:
+                                raw_speed = f"{avg_speed / 1000:.1f} KB/s"
+                            else:
+                                raw_speed = f"{avg_speed:.0f} B/s"
+                
+                self.last_bytes = current_bytes
+                self.last_time = now
             else:
                 msg_type = "transcription_progress"
                 
-            self.emit(msg_type, {"percent": percent, "speed": speed, "raw": line})
+            self.emit(msg_type, {"percent": percent, "speed": raw_speed, "raw": line})
             return
 
         # Fallback for simpler lines
         if "%|" in line:
-            if "B/s" in line or "Fetching" in line or "kB/s" in line or "MB/s" in line:
+            if any(unit in line for unit in ["B/s", "Fetching", "kB/s", "MB/s", "GB/s"]):
                 self.emit("download_progress", {"raw": line})
             else:
                 self.emit("transcription_progress", {"raw": line})
