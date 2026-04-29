@@ -186,7 +186,6 @@ class Transcriber: ObservableObject {
                     
                     // Fallback for raw string if structured parsing failed in Python
                     if let msg = progressData["raw"] as? String {
-                        let isOverall = msg.contains("Fetching")
                         if self.downloadPercent == nil {
                             if let range = msg.range(of: "(\\d+)%", options: .regularExpression) {
                                 let percentStr = msg[range].dropLast()
@@ -218,6 +217,7 @@ class Transcriber: ObservableObject {
                             if let p = Double(percentStr) {
                                 self.transcriptionPercent = p
                             }
+                        }
                     }
                 }
             } else if type == "error", let msg = dict["data"] as? String {
