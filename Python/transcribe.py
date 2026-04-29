@@ -14,8 +14,6 @@ except ImportError:
 import mlx_whisper
 from huggingface_hub import snapshot_download
 
-import time
-
 class SubprocessReporter:
     def __init__(self):
         self.stdout_buf = ""
@@ -24,10 +22,7 @@ class SubprocessReporter:
         # Regex for tqdm: matches percentage, current size/total size, time, and speed
         # Example: 45%|████▍     | 1.25GB/2.87GB [00:15<00:18, 85.2MB/s]
         self.tqdm_re = re.compile(r"(\d+)%\|.*\|?\s*([\d\.]+[kMG]?B)?/?([\d\.]+[kMG]?B)?\s*\[.*,\s*([\d\.]+[kMG]?B/s)\]")
-        self.last_percent = -1
-        self.last_time = time.time()
-        self.last_bytes = 0
-        self.speed_history = []
+        self.last_percent = 0
 
     def write_stdout(self, text):
         for char in text:
@@ -51,68 +46,47 @@ class SubprocessReporter:
         if line.startswith("[") and "-->" in line:
             self.emit("segment_text", line)
 
-    def _parse_size(self, size_str):
-        if not size_str: return 0
-        s = size_str.upper().strip()
-        try:
-            # Use 1000-base for consistency with Activity Monitor / Stats
-            if "GB" in s: return float(s.replace("GB", "").strip()) * 1000 * 1000 * 1000
-            if "MB" in s: return float(s.replace("MB", "").strip()) * 1000 * 1000
-            if "KB" in s: return float(s.replace("KB", "").strip()) * 1000
-            if "B" in s: return float(s.replace("B", "").strip())
-        except: pass
-        return 0
-
     def parse_stderr_line(self, line):
-        # Try robust parsing first
-        match = self.tqdm_re.search(line)
-        if match:
-            percent = int(match.group(1))
-            raw_speed = match.group(4)
-            current_size_str = match.group(2)
-            
-            # Use provided speed but refine it if possible
-            # Identify if it's download or transcription based on context
-            if "B" in line and ("B/s" in line or "/" in line):
-                msg_type = "download_progress"
-                
-                # Custom speed calculation for better accuracy/smoothing
-                now = time.time()
-                current_bytes = self._parse_size(current_size_str)
-                if current_bytes > 0 and self.last_bytes > 0:
-                    dt = now - self.last_time
-                    if dt > 0.1:
-                        db = current_bytes - self.last_bytes
-                        if db >= 0:
-                            instant_speed = db / dt
-                            self.speed_history.append(instant_speed)
-                            if len(self.speed_history) > 5:
-                                self.speed_history.pop(0)
-                            
-                            avg_speed = sum(self.speed_history) / len(self.speed_history)
-                            if avg_speed > 1000 * 1000:
-                                raw_speed = f"{avg_speed / (1000*1000):.1f} MB/s"
-                            elif avg_speed > 1000:
-                                raw_speed = f"{avg_speed / 1000:.1f} KB/s"
-                            else:
-                                raw_speed = f"{avg_speed:.0f} B/s"
-                
-                self.last_bytes = current_bytes
-                self.last_time = now
-            else:
-                msg_type = "transcription_progress"
-                
-            self.emit(msg_type, {"percent": percent, "speed": raw_speed, "raw": line})
+        # 1. Look for global progress: "Fetching 12 files:  25%|..."
+        global_match = re.search(r"Fetching \d+ files:\s+(\d+)%", line)
+        if global_match:
+            percent = int(global_match.group(1))
+            if percent >= self.last_percent:
+                self.last_percent = percent
+                self.emit("download_progress", {"percent": percent, "raw": line})
             return
 
-        # Fallback for simpler lines
+        # 2. Look for standard tqdm file progress or hf_transfer progress
+        # Example: 45%|████▍     | 1.25GB/2.87GB [00:15<00:18, 85.2MB/s]
+        # Or: downloading model.safetensors:  10%
+        match = self.tqdm_re.search(line)
+        if not match:
+            # Fallback regex for simpler percentage lines often seen in hf_transfer or simplified logs
+            match = re.search(r"(\d+)%", line)
+            
+        if match:
+            try:
+                percent = int(match.group(1))
+                # Only update if it's download context
+                if any(kw in line.lower() for kw in ["download", "fetching", "byte", " b", " b/s"]):
+                    # To prevent jumping back during multi-file downloads, 
+                    # we only report progress if it's higher than last_percent.
+                    # Note: We reset last_percent when a new stage starts (in main)
+                    if percent > self.last_percent:
+                        self.last_percent = percent
+                        self.emit("download_progress", {"percent": percent, "raw": line})
+                else:
+                    self.emit("transcription_progress", {"percent": percent, "raw": line})
+            except:
+                pass
+            return
+
+        # 3. Final fallback for lines containing percentage markers
         if "%|" in line:
             if any(unit in line for unit in ["B/s", "Fetching", "kB/s", "MB/s", "GB/s"]):
                 self.emit("download_progress", {"raw": line})
             else:
                 self.emit("transcription_progress", {"raw": line})
-        elif "Fetching" in line:
-            self.emit("download_progress", {"raw": line})
 
     def emit(self, msg_type, data):
         print(json.dumps({"type": msg_type, "data": data}), file=self.real_stdout, flush=True)
@@ -154,10 +128,12 @@ def main():
 
     try:
         # Explicitly check/download model first to show better progress
+        reporter.last_percent = 0
         reporter.emit("status", "Checking model...")
         # snapshot_download will use the redirected stderr, which our reporter will parse
         model_path = snapshot_download(repo_id=args.model)
         
+        reporter.last_percent = 0
         reporter.emit("status", "Transcribing...")
         result = mlx_whisper.transcribe(
             args.audio,

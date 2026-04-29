@@ -35,7 +35,6 @@ class Transcriber: ObservableObject {
     @Published var downloadPercent: Double? = nil
     @Published var downloadSpeed: String = ""
     @Published var transcriptionPercent: Double? = nil
-    @Published var transcriptionSpeed: String = ""
     private var process: Process?
     
     // Configurable parameters
@@ -136,6 +135,27 @@ class Transcriber: ObservableObject {
         }
         
         try task.run()
+        
+        // Start network monitoring for this PID
+        let monitor = ProcessNetworkMonitor(pid: task.processIdentifier)
+        Task {
+            while task.isRunning {
+                if let speed = monitor.getSpeed() {
+                    await MainActor.run {
+                        // In downloading phase, we use the monitor speed as the authoritative real-time speed
+                        // This matches the 'stats' app behavior of monitoring process-level network traffic
+                        if self.downloadPercent != nil {
+                            self.downloadSpeed = speed
+                        } else if self.transcriptionPercent != nil {
+                            // During transcription, we might also show network speed if it's doing something online
+                            // but usually it's local. We'll stick to download phase for now.
+                        }
+                    }
+                }
+                try? await Task.sleep(nanoseconds: 1_000_000_000) // 1 second
+            }
+        }
+        
         task.waitUntilExit()
         
         // Final capture of any remaining data in pipes
@@ -168,7 +188,6 @@ class Transcriber: ObservableObject {
                 if msg == "Transcribing..." {
                     self.downloadPercent = nil
                     self.downloadSpeed = ""
-                    self.transcriptionSpeed = ""
                 }
                 self.state = .transcribing(msg)
             } else if type == "download_progress" {
@@ -182,10 +201,6 @@ class Transcriber: ObservableObject {
                         self.downloadPercent = Double(p)
                     }
                     
-                    if let s = progressData["speed"] as? String {
-                        self.downloadSpeed = s
-                    }
-                    
                     // Fallback for raw string if structured parsing failed in Python
                     if let msg = progressData["raw"] as? String {
                         if self.downloadPercent == nil {
@@ -194,11 +209,6 @@ class Transcriber: ObservableObject {
                                 if let p = Double(percentStr) {
                                     self.downloadPercent = p
                                 }
-                            }
-                        }
-                        if self.downloadSpeed.isEmpty {
-                            if let speedRange = msg.range(of: "(\\d+(?:\\.\\d+)?[a-zA-Z]+/s)", options: .regularExpression) {
-                                self.downloadSpeed = String(msg[speedRange])
                             }
                         }
                     }
@@ -215,10 +225,6 @@ class Transcriber: ObservableObject {
                         self.transcriptionPercent = Double(p)
                     }
                     
-                    if let s = progressData["speed"] as? String {
-                        self.transcriptionSpeed = s
-                    }
-                    
                     if let msg = progressData["raw"] as? String {
                         if self.transcriptionPercent == nil {
                             if let range = msg.range(of: "(\\d+)%", options: .regularExpression) {
@@ -226,11 +232,6 @@ class Transcriber: ObservableObject {
                                 if let p = Double(percentStr) {
                                     self.transcriptionPercent = p
                                 }
-                            }
-                        }
-                        if self.transcriptionSpeed.isEmpty {
-                            if let speedRange = msg.range(of: "(\\d+(?:\\.\\d+)?[a-zA-Z]+/s)", options: .regularExpression) {
-                                self.transcriptionSpeed = String(msg[speedRange])
                             }
                         }
                     }

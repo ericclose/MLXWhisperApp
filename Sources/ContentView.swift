@@ -379,7 +379,7 @@ struct MainView: View {
                     }
                     
                     if let transPercent = transcriber.transcriptionPercent {
-                        StatsProgressBar(value: transPercent, speed: transcriber.transcriptionSpeed, label: "Transcribing Audio", color: .purple, iconName: "bolt.fill")
+                        StatsProgressBar(value: transPercent, speed: "", label: "Transcribing Audio", color: .purple, iconName: "bolt.fill")
                             .padding(.top, 8)
                             .padding(.horizontal)
                     }
